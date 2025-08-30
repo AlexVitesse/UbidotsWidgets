@@ -1,0 +1,44 @@
+<div class="loading-container" id="loadingContainer">
+    <div class="spinner"></div>
+    <div class="loading-text">Cargando datos del sensor...</div>
+</div>
+
+<div class="card" id="mainWidget" style="display: none;">
+    <!-- Icono de desconexión agregado al lado izquierdo -->
+    <img src="https://cdn-icons-png.flaticon.com/512/11560/11560443.png" id="disconnectIcon" class="disconnect-icon" alt="Desconectado" />
+    
+    <!-- Icono de alerta agregado -->
+    <img src="https://i.imgur.com/R3YqMuw.png" id="alertIcon" class="alert-icon" alt="Alerta" />
+    
+    <!-- Información de última actualización -->
+    <div class="last-update" id="lastUpdate">
+        <svg class="update-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>
+        <span class="update-text">Last update --</span>
+    </div>
+    
+    <div class="motor-container">
+        <img src="https://i.imgur.com/D6MCRQB.png" id="motorIcon" class="motor" alt="Motor" />
+    </div>
+
+    <div class="thermometer-container">
+        <div class="thermometer">
+            <div class="thermometer-bulb">
+                <div class="mercury-bulb" id="mercuryBulb"></div>
+            </div>
+            <div class="thermometer-tube">
+                <div class="mercury-fill" id="mercuryFill"></div>
+            </div>
+        </div>
+        <div class="temp-scale">
+            <div class="scale-mark" style="left: calc(6% + 0px);"><span>0°</span></div>
+            <div class="scale-mark" style="left: calc(6% + 22%);"><span>15°</span></div>
+            <div class="scale-mark" style="left: calc(6% + 44%);"><span>30°</span></div>
+            <div class="scale-mark" style="left: calc(6% + 66%);"><span>45°</span></div>
+            <div class="scale-mark" style="left: calc(6% + 88%);"><span>60°</span></div>
+        </div>
+    </div>
+
+    <div class="temp-value" id="tempValue">-- °C</div>
+</div>

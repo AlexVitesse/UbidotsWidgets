@@ -1,0 +1,490 @@
+:root {
+  --bg: #0b0f15;
+  --good: #18c29c;
+  --warn: #ffb020;
+  --bad: #ff5d5d;
+  --text: #e8eef6;
+  --blue: #4a90e2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  margin: 0;
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--text);
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(74, 144, 226, 0.2);
+  border-top: 4px solid var(--blue);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 1rem;
+  color: #8a9ba8;
+  text-align: center;
+}
+
+.card {
+  background: #111c2b;
+  padding: 30px;
+  border-radius: 16px;
+  text-align: center;
+  width: 100%;
+  max-width: 400px;
+  min-width: 300px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+  position: relative;
+  color: var(--text);
+  margin: 0 auto;
+}
+
+/* Icono de alerta */
+.alert-icon {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 10;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.alert-icon.visible {
+  opacity: 1;
+}
+
+.alert-icon.blinking {
+  animation: alertBlink 1s ease-in-out infinite;
+}
+
+/* Icono de desconexión */
+.disconnect-icon {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 10;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.disconnect-icon.visible {
+  opacity: 1;
+}
+
+.disconnect-icon.blinking {
+  animation: disconnectBlink 1.5s ease-in-out infinite;
+}
+
+@keyframes alertBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes disconnectBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Información de última actualización */
+.last-update {
+  font-size: 0.85rem;
+  color: #8a9ba8;
+  margin-bottom: 15px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  position: relative;
+  overflow: hidden;
+}
+
+.last-update.disconnected {
+  color: var(--bad);
+  background: rgba(255,93,93,0.1);
+  border-color: rgba(255,93,93,0.2);
+}
+
+.last-update.connected {
+  color: var(--good);
+  background: rgba(24,194,156,0.1);
+  border-color: rgba(24,194,156,0.2);
+}
+
+.last-update .update-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.8;
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.last-update.connected .update-icon {
+  color: var(--good);
+}
+
+.last-update.disconnected .update-icon {
+  color: var(--bad);
+}
+
+.last-update .update-text {
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.motor-container {
+  margin-bottom: 15px;
+}
+
+.motor {
+  width: 270px;
+  height: 270px;
+  filter: drop-shadow(0 4px 6px rgba(0,0,0,.4));
+  transition: filter .3s ease;
+  position: relative;
+  z-index: 2;
+  margin: 0 auto;
+}
+
+.motor.stopped {
+  filter: hue-rotate(0deg) saturate(3) brightness(0.8);
+}
+
+.thermometer-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 15px 0;
+  min-height: 80px;
+}
+
+.thermometer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 280px;
+}
+
+.thermometer-bulb {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #2a3441 0%, #1e2832 100%);
+  border: 2px solid #3d4a5c;
+  border-radius: 50%;
+  position: relative;
+  margin-right: -2px;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.mercury-bulb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  background: var(--blue);
+  border-radius: 50%;
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(74, 144, 226, 0.5);
+}
+
+.thermometer-tube {
+  flex: 1;
+  height: 16px;
+  background: linear-gradient(to right, #2a3441 0%, #1e2832 100%);
+  border: 2px solid #3d4a5c;
+  border-radius: 0 8px 8px 0;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+  min-width: 200px;
+}
+
+.mercury-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--blue);
+  border-radius: 0 6px 6px 0;
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 0%;
+  box-shadow: 0 0 8px rgba(74, 144, 226, 0.4);
+}
+
+.temp-scale {
+  position: relative;
+  margin-top: 15px;
+  width: 100%;
+  max-width: 280px;
+  height: 20px;
+}
+
+.scale-mark {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 2px;
+}
+
+.scale-mark::before {
+  content: '';
+  width: 1px;
+  height: 8px;
+  background: #5a6b7d;
+  margin-bottom: 4px;
+}
+
+.scale-mark span {
+  font-size: 0.75rem;
+  color: #8a9ba8;
+  white-space: nowrap;
+}
+
+.temp-value {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin: 20px 0 10px 0;
+  color: var(--blue);
+  transition: color 0.8s ease;
+  text-shadow: 0 0 15px rgba(74, 144, 226, 0.3);
+}
+
+.status {
+  font-size: 1rem;
+  margin-top: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  display: inline-block;
+  background: rgba(255,255,255,.1);
+  transition: all 0.3s ease;
+}
+
+.status.running { 
+  background: rgba(24,194,156,.2); 
+  color: var(--good);
+}
+
+.status.stopped { 
+  background: rgba(255,93,93,.2); 
+  color: var(--bad);
+}
+
+/* Media queries para tablets */
+@media (max-width: 768px) {
+  .card {
+    padding: 25px;
+    max-width: 350px;
+    min-width: 280px;
+  }
+  
+  .last-update {
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    margin-bottom: 12px;
+    min-height: 32px;
+  }
+  
+  .last-update .update-icon {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .motor {
+    width: 225px;
+    height: 225px;
+  }
+  
+  .temp-value {
+    font-size: 2.2rem;
+  }
+  
+  .thermometer-tube {
+    min-width: 180px;
+  }
+}
+
+/* Media queries para móviles */
+@media (max-width: 480px) {
+  body {
+    padding: 8px;
+  }
+  
+  .card {
+    padding: 20px;
+    min-width: 260px;
+    max-width: 320px;
+  }
+  
+  .alert-icon, .disconnect-icon {
+    top: 12px;
+    width: 20px;
+    height: 20px;
+  }
+  
+  .alert-icon {
+    right: 12px;
+  }
+
+  .disconnect-icon {
+    left: 12px;
+  }
+  
+  .last-update {
+    font-size: 0.75rem;
+    padding: 5px 8px;
+    margin-bottom: 10px;
+    min-height: 28px;
+    gap: 4px;
+  }
+  
+  .last-update .update-icon {
+    width: 11px;
+    height: 11px;
+  }
+  
+  .motor {
+    width: 195px;
+    height: 195px;
+  }
+  
+  .thermometer-bulb {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .thermometer-tube {
+    height: 14px;
+    min-width: 160px;
+  }
+  
+  .temp-value {
+    font-size: 2rem;
+    margin: 15px 0 8px 0;
+  }
+  
+  .scale-mark span {
+    font-size: 0.65rem;
+  }
+  
+  .status {
+    font-size: 0.9rem;
+    padding: 6px 12px;
+  }
+}
+
+/* Media queries para pantallas muy pequeñas */
+@media (max-width: 320px) {
+  body {
+    padding: 5px;
+  }
+  
+  .card {
+    padding: 15px;
+    min-width: 240px;
+  }
+  
+  .alert-icon, .disconnect-icon {
+    top: 10px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .alert-icon {
+    right: 10px;
+  }
+
+  .disconnect-icon {
+    left: 10px;
+  }
+  
+  .last-update {
+    font-size: 0.7rem;
+    padding: 4px 6px;
+    margin-bottom: 8px;
+    min-height: 24px;
+    gap: 3px;
+  }
+  
+  .last-update .update-icon {
+    width: 10px;
+    height: 10px;
+  }
+  
+  .motor {
+    width: 165px;
+    height: 165px;
+  }
+  
+  .thermometer-container {
+    margin: 10px 0;
+  }
+  
+  .thermometer-bulb {
+    width: 22px;
+    height: 22px;
+  }
+  
+  .thermometer-tube {
+    height: 12px;
+    min-width: 140px;
+  }
+  
+  .temp-value {
+    font-size: 1.8rem;
+    margin: 12px 0 6px 0;
+  }
+  
+  .scale-mark span {
+    font-size: 0.6rem;
+  }
+  
+  .status {
+    font-size: 0.8rem;
+    padding: 5px 10px;
+  }
+}
