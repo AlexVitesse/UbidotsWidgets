@@ -25,6 +25,35 @@ const imgStopped = "https://i.imgur.com/CvbzHSg.png";   // Imagen de motor deten
 // Variable para controlar el parpadeo
 let blinkInterval = null;  // Intervalo para el efecto de parpadeo
 
+// ==================== MQTT CONFIGURATION ====================
+const UBIDOTS_TOKEN = "BBUS-XjHBrDrhcxVPTvQMK1NLuLny7OIKsl";  // Token de autenticación
+const DEVICE_LABEL = "esp32";  // Etiqueta del dispositivo en Ubidots
+
+// Variables de Ubidots
+const VARIABLES = {
+  temperature: "temperatura",  // Variable de temperatura
+  motorStatus: "connected",    // Variable de estado del motor
+  alertas: "alertas"           // Variable de alertas
+};
+
+// Configuración MQTT
+const MQTT_HOST = 'wss://industrial.api.ubidots.com:8084/mqtt';
+const clientId = 'mqttjs_' + Math.random().toString(16).substr(2, 8);
+
+// Cliente MQTT
+let mqttClient = null;
+
+// Tiempo límite para considerar desconectado (30 segundos)
+const DISCONNECT_TIMEOUT = 30000;
+
+// Control de desconexión por timeout basado en timestamp del dispositivo
+let disconnectTimer = null;
+let isCheckingDisconnection = false;
+
+// Contador de variables recibidas al suscribirse
+let initialValuesReceived = 0;
+const totalVariables = 3;
+
 // Función para formatear fecha y hora
 function formatDateTime(timestamp) {
   if (!timestamp) return "Sin datos";  // Si no hay timestamp, mostrar mensaje
@@ -224,19 +253,21 @@ function render() {
   updateLastUpdateDisplay();
 }
 
-// Función para actualizar con datos reales de Ubidots
-function updateFromUbidots(temperature, motorStatus, alertas, isDisconnected, lastUpdateTimestamp) {
-  console.log("📡 updateFromUbidots recibió:");
+// Función para actualizar con datos reales
+function updateFromData(temperature, motorStatus, alertas, isDisconnected, lastUpdateTimestamp) {
+  console.log("📡 updateFromData recibió:");
   
   let stateChanged = false;  // Bandera para detectar cambios
+  let hasNewData = false;    // Bandera para detectar si hay nuevos datos del dispositivo
 
   // Procesar temperatura
-  if (!isNaN(temperature)) {
+  if (!isNaN(temperature) && temperature !== null) {
     const newTemp = parseFloat(temperature.toFixed(1));
     if (state.tempC !== newTemp) {
       console.log("🌡️ Temperatura cambió:", state.tempC, "->", newTemp);
       state.tempC = newTemp;
       stateChanged = true;
+      hasNewData = true;
     }
   }
   
@@ -247,15 +278,17 @@ function updateFromUbidots(temperature, motorStatus, alertas, isDisconnected, la
       console.log("🔧 Estado motor cambió:", state.running, "->", newRunning);
       state.running = newRunning;
       stateChanged = true;
+      hasNewData = true;
     }
   }
   
   // Procesar alertas
-  if (!isNaN(alertas)) {
+  if (!isNaN(alertas) && alertas !== null) {
     if (state.alertas !== alertas) {
       console.log("🚨 Alertas cambió:", state.alertas, "->", alertas);
       state.alertas = alertas;
       stateChanged = true;
+      hasNewData = true;
     }
   }
   
@@ -277,6 +310,26 @@ function updateFromUbidots(temperature, motorStatus, alertas, isDisconnected, la
     }
   }
 
+  // Si recibimos nuevos datos del dispositivo, gestionar el timer de desconexión
+  if (hasNewData && lastUpdateTimestamp) {
+    console.log("📨 Nuevos datos recibidos del dispositivo");
+    
+    // Si estaba desconectado, reconectarlo
+    if (state.isDisconnected) {
+      console.log("🔄 Reconectando dispositivo...");
+      state.isDisconnected = false;
+      stateChanged = true;
+    }
+    
+    // Iniciar/reiniciar timer de verificación solo si no está corriendo
+    if (!isCheckingDisconnection) {
+      console.log("▶️ Iniciando timer de verificación de desconexión");
+      startDisconnectTimer();
+    } else {
+      console.log("🔄 Timer ya está corriendo, continuando verificación");
+    }
+  }
+
   // Si hubo cambios, actualizar la interfaz
   if (stateChanged) {
     console.log("📊 Estado actualizado, llamando render()");
@@ -286,168 +339,238 @@ function updateFromUbidots(temperature, motorStatus, alertas, isDisconnected, la
   }
 }
 
-// ==================== UBIDOTS ====================
+// ==================== MQTT FUNCTIONS ====================
 
-// Configuración de Ubidots
-const UBIDOTS_TOKEN = "BBUS-XjHBrDrhcxVPTvQMK1NLuLny7OIKsl";  // Token de autenticación
-const DEVICE_LABEL = "esp32";  // Etiqueta del dispositivo en Ubidots
-
-// Variables de Ubidots
-const VARIABLES = {
-  temperature: "temperatura",  // Variable de temperatura
-  motorStatus: "connected",    // Variable de estado del motor
-  alertas: "alertas"           // Variable de alertas
-};
-
-// Tiempo límite para considerar desconectado (30 segundos)
-const DISCONNECT_TIMEOUT = 30000;
-
-// Función para obtener los datos básicos de Ubidots (método confiable)
-async function getBasicDataFromUbidots(variable) {
-  const url = `https://industrial.api.ubidots.com/api/v1.6/devices/${DEVICE_LABEL}/${variable}/lv?token=${UBIDOTS_TOKEN}`;
+// Función para verificar desconexión basada en timestamp del último dato
+function checkDeviceDisconnection() {
+  if (!state.lastUpdateTime) {
+    console.log("⚠️ No hay timestamp de última actualización, considerando desconectado");
+    updateFromData(null, null, null, true, null);
+    return;
+  }
   
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-    
-    const data = await response.text();
-    const parsedData = parseFloat(data);  // Convertir a número
-    
-    return parsedData;
-  } catch (error) {
-    console.error(`❌ Error fetching basic data for variable ${variable}:`, error);
-    return null;  // Devolver null en caso de error
+  const currentTime = Date.now();
+  const timeDifference = currentTime - state.lastUpdateTime;
+  
+  console.log(`🕐 Verificando desconexión: Diferencia de tiempo = ${timeDifference}ms (límite: ${DISCONNECT_TIMEOUT}ms)`);
+  
+  if (timeDifference > DISCONNECT_TIMEOUT) {
+    console.log(`⚠️ DISPOSITIVO DESCONECTADO: ${timeDifference}ms > ${DISCONNECT_TIMEOUT}ms`);
+    updateFromData(null, null, null, true, state.lastUpdateTime);
+    stopDisconnectTimer(); // Parar el timer cuando se desconecta
+  } else {
+    console.log(`✅ Dispositivo conectado: ${timeDifference}ms <= ${DISCONNECT_TIMEOUT}ms`);
   }
 }
 
-// Función para obtener los datos con timestamp de Ubidots
-async function getDataWithTimestamp(variable) {
-  const url = `https://industrial.api.ubidots.com/api/v1.6/devices/${DEVICE_LABEL}/${variable}?token=${UBIDOTS_TOKEN}`;
+// Función para iniciar el timer de verificación de desconexión
+function startDisconnectTimer() {
+  if (disconnectTimer) {
+    clearInterval(disconnectTimer);
+  }
+  
+  isCheckingDisconnection = true;
+  disconnectTimer = setInterval(checkDeviceDisconnection, 5000); // Verificar cada 5 segundos
+  console.log("⏰ Timer de verificación de desconexión INICIADO");
+}
+
+// Función para detener el timer de verificación de desconexión
+function stopDisconnectTimer() {
+  if (disconnectTimer) {
+    clearInterval(disconnectTimer);
+    disconnectTimer = null;
+  }
+  
+  isCheckingDisconnection = false;
+  console.log("⏸️ Timer de verificación de desconexión DETENIDO");
+}
+
+// Función para procesar el valor inicial recibido al suscribirse
+function handleInitialValue(topic, message, isInitialSubscription = false) {
+  const messageStr = message.toString();
+  console.log(messageStr);
+  console.log(`\n📋 ===== ${isInitialSubscription ? 'VALOR INICIAL' : 'MENSAJE'} MQTT =====`);
+  console.log(`📍 Tópico: ${topic}`);
+  console.log(`📝 Mensaje raw: "${messageStr}"`);
+  console.log(`🔢 Tipo de mensaje: ${typeof messageStr}`);
+  console.log(`📏 Longitud: ${messageStr.length} caracteres`);
   
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+    let value = null;
+    let timestamp = null;
     
-    const data = await response.json();
-    
-    // Verificar que existe data.last_value
-    if (data && data.last_value && data.last_value.timestamp) {
-      const lastValue = data.last_value;
-      const returnData = {
-        value: parseFloat(lastValue.value),
-        timestamp: lastValue.timestamp,  // Timestamp en milisegundos
-        created_at: lastValue.created_at // Fecha de creación como backup
-      };
-      return returnData;
-    } else {
-      return null;  // Devolver null si falta estructura de datos
+    // Intentar parsear como JSON primero (formato completo de Ubidots)
+    try {
+      const parsedMessage = JSON.parse(messageStr);
+      console.log(`📦 Mensaje parseado como JSON:`, parsedMessage);
+      
+      if (typeof parsedMessage === 'object' && parsedMessage !== null) {
+        // Formato esperado: {"value": 25.6, "timestamp": 1725123456789}
+        if (parsedMessage.hasOwnProperty('value')) {
+          value = parseFloat(parsedMessage.value);
+          console.log(`🧮 Valor extraído del JSON: ${value}`);
+        }
+        
+        if (parsedMessage.hasOwnProperty('timestamp')) {
+          timestamp = parseInt(parsedMessage.timestamp);
+          console.log(`🕐 Timestamp extraído del JSON: ${timestamp}`);
+          console.log(`📅 Fecha del timestamp: ${new Date(timestamp)}`);
+        }
+      }
+    } catch (jsonError) {
+      // Si no es JSON válido, intentar como valor simple
+      console.log(`⚠️ No es JSON válido, intentando como valor simple`);
+      value = parseFloat(messageStr);
+      timestamp = Date.now(); // Usar timestamp actual como fallback
+      console.log(`🧮 Valor parseado como simple: ${value}`);
+      console.log(`🕐 Usando timestamp actual como fallback: ${timestamp}`);
     }
+    
+    console.log(`✅ Procesamiento final:`);
+    console.log(`   • Valor: ${value} (válido: ${!isNaN(value)})`);
+    console.log(`   • Timestamp: ${timestamp}`);
+    console.log(`   • Fecha: ${timestamp ? new Date(timestamp) : 'N/A'}`);
+    
+    if (isInitialSubscription) {
+      initialValuesReceived++;
+      console.log(`📊 Valores iniciales recibidos: ${initialValuesReceived}/${totalVariables}`);
+    }
+    
+    // Procesar según el tópico
+    if (topic.includes(VARIABLES.temperature)) {
+      console.log("🌡️ ➜ PROCESANDO COMO TEMPERATURA");
+      updateFromData(value, null, null, false, timestamp);
+    } else if (topic.includes(VARIABLES.motorStatus)) {
+      console.log("🔧 ➜ PROCESANDO COMO ESTADO MOTOR");
+      updateFromData(null, value, null, false, timestamp);
+    } else if (topic.includes(VARIABLES.alertas)) {
+      console.log("🚨 ➜ PROCESANDO COMO ALERTAS");
+      updateFromData(null, null, value, false, timestamp);
+    } else {
+      console.log("❓ ➜ TÓPICO NO RECONOCIDO");
+    }
+    
+    // Si hemos recibido todos los valores iniciales, mostrar el widget
+    if (isInitialSubscription && initialValuesReceived >= totalVariables) {
+      console.log("\n🎉 ===== TODOS LOS VALORES INICIALES RECIBIDOS =====");
+      console.log("👁️ Mostrando widget...");
+      showWidget();
+    }
+    
+    console.log("================================================\n");
+    
   } catch (error) {
-    console.error(`❌ Error fetching timestamp data for variable ${variable}:`, error);
-    return null;  // Devolver null en caso de error
+    console.error("❌ Error procesando mensaje MQTT:", error);
+    console.log("================================================\n");
   }
 }
 
-// Función para obtener la hora actual local
-function getCurrentTime() {
-  const now = Date.now();  // Obtener timestamp actual en milisegundos
-  return now;
+// Función para conectar a MQTT
+function connectMQTT() {
+  console.log("🔌 Iniciando conexión MQTT a Ubidots...");
+  
+  try {
+    mqttClient = mqtt.connect(MQTT_HOST, {
+      clientId: clientId,
+      username: UBIDOTS_TOKEN,
+      keepalive: 60,
+      reconnectPeriod: 5000,
+      connectTimeout: 10000
+    });
+
+    // Evento de conexión exitosa
+    mqttClient.on('connect', () => {
+      console.log("✅ Conectado al broker MQTT de Ubidots");
+      console.log(`🆔 Client ID: ${clientId}`);
+      
+      // Suscribirse a todos los tópicos de las variables
+      const topics = [
+        `/v1.6/devices/${DEVICE_LABEL}/${VARIABLES.temperature}`,
+        `/v1.6/devices/${DEVICE_LABEL}/${VARIABLES.motorStatus}`,
+        `/v1.6/devices/${DEVICE_LABEL}/${VARIABLES.alertas}`
+      ];
+      
+      console.log("\n🔔 ===== SUSCRIBIÉNDOSE A TÓPICOS =====");
+      topics.forEach((topic, index) => {
+        mqttClient.subscribe(topic, (err) => {
+          if (!err) {
+            console.log(`📡 [${index + 1}/${topics.length}] Suscrito a: ${topic}`);
+            console.log(`    ➜ Esperando último valor publicado...`);
+          } else {
+            console.error(`❌ Error al suscribirse a ${topic}:`, err);
+          }
+        });
+      });
+      console.log("==========================================");
+      
+      // El timer se iniciará cuando se reciban los primeros datos
+    });
+
+    // Evento de mensaje recibido
+    mqttClient.on('message', (topic, message) => {
+      // Determinar si es un valor inicial (primeros mensajes después de suscribirse)
+      const isInitial = initialValuesReceived < totalVariables;
+      handleInitialValue(topic, message, isInitial);
+    });
+
+    // Evento de error
+    mqttClient.on('error', (err) => {
+      console.error("❌ Error MQTT:", err);
+    });
+
+    // Evento de desconexión
+    mqttClient.on('close', () => {
+      console.log("🔌 Conexión MQTT cerrada");
+    });
+
+    // Evento de reconexión
+    mqttClient.on('reconnect', () => {
+      console.log("🔄 Reintentando conexión MQTT...");
+    });
+
+  } catch (error) {
+    console.error("❌ Error al conectar MQTT:", error);
+  }
 }
 
-// Función para verificar si el dispositivo está desconectado
-function checkDisconnection(currentTime, lastUpdateTime) {
-  const timeDifference = currentTime - lastUpdateTime;  // Diferencia en milisegundos
-  const isDisconnected = timeDifference > DISCONNECT_TIMEOUT;  // Comparar con umbral
-  
-  return isDisconnected;
-}
+// ==================== INITIALIZATION FUNCTIONS ====================
 
 // Función para mostrar el widget después de cargar los datos
 function showWidget() {
-  console.log("👁️ Showing widget");
-  loadingContainer.style.display = 'none';  // Ocultar contenedor de carga
-  mainWidget.style.display = 'block';       // Mostrar widget principal
+  console.log("👁️ Mostrando widget");
+  if (loadingContainer) loadingContainer.style.display = 'none';  // Ocultar contenedor de carga
+  if (mainWidget) mainWidget.style.display = 'block';       // Mostrar widget principal
 }
 
-// Función para actualizar widget desde Ubidots
-async function updateWidgetFromUbidots() {
-  console.log("\n🚀 ===== INICIO ACTUALIZACIÓN DESDE UBIDOTS =====");
+// ==================== MAIN INITIALIZATION ====================
+
+// Inicializar widget con estado por defecto
+console.log("🎨 Render inicial con estado por defecto");
+render();  // Renderizar estado inicial
+
+// Función principal de inicialización
+async function initializeWidget() {
+  console.log("\n🚀 ===== INICIANDO WIDGET UBIDOTS (SOLO MQTT) =====");
+  console.log("📋 Configuración:");
+  console.log(`   • Device: ${DEVICE_LABEL}`);
+  console.log(`   • Variables: ${Object.values(VARIABLES).join(', ')}`);
+  console.log(`   • Timeout desconexión: ${DISCONNECT_TIMEOUT}ms`);
+  console.log(`   • Host MQTT: ${MQTT_HOST}`);
+  console.log("===============================================");
   
   try {
-    // Obtener el tiempo actual al inicio
-    const currentTime = getCurrentTime();
+    // Conectar directamente a MQTT (sin llamadas API)
+    console.log("📡 Conectando a MQTT para recibir últimos valores...");
+    connectMQTT();
     
-    // Obtener datos con timestamp para verificar desconexión
-    let isDisconnected = true;  // Por defecto asumir desconectado
-    let temperature = null;
-    let motorStatus = null;
-    let alertas = null;
-    let lastUpdateTimestamp = null;
-    
-    try {
-      const temperatureData = await getDataWithTimestamp(VARIABLES.temperature);
-      
-      if (temperatureData && temperatureData.timestamp) {
-        // Guardar el timestamp para mostrar en la interfaz
-        lastUpdateTimestamp = temperatureData.timestamp;
-        
-        // Verificar si está desconectado basado en el timestamp
-        isDisconnected = checkDisconnection(currentTime, temperatureData.timestamp);
-        
-        // Si NO está desconectado, usar el valor del timestamp
-        if (!isDisconnected) {
-          temperature = temperatureData.value;
-        } else {
-          // Aún mostrar el último valor conocido, pero marcado como desconectado
-          temperature = temperatureData.value;
-        }
-      } else {
-        console.log("❌ No se pudo obtener timestamp data - asumiendo desconectado");
-        isDisconnected = true;
-      }
-    } catch (timestampError) {
-      console.error("❌ Error obteniendo timestamp:", timestampError);
-      isDisconnected = true;
-    }
-
-    // Solo si NO está desconectado, obtener el resto de datos básicos
-    if (!isDisconnected) {
-      // Si no obtuvimos temperatura del timestamp, obtenerla por método básico
-      if (temperature === null) {
-        temperature = await getBasicDataFromUbidots(VARIABLES.temperature);
-      }
-      
-      motorStatus = await getBasicDataFromUbidots(VARIABLES.motorStatus);
-      alertas = await getBasicDataFromUbidots(VARIABLES.alertas);
-    } else {
-      // Intentar obtener los últimos valores conocidos para mostrar
-      if (temperature === null) {
-        temperature = await getBasicDataFromUbidots(VARIABLES.temperature);
-      }
-      motorStatus = await getBasicDataFromUbidots(VARIABLES.motorStatus);
-      alertas = await getBasicDataFromUbidots(VARIABLES.alertas);
-    }
-
-    // Actualizar el widget con todos los datos
-    updateFromUbidots(temperature, motorStatus, alertas, isDisconnected, lastUpdateTimestamp);
-    showWidget();
+    console.log("✅ Inicialización MQTT completada");
+    console.log("⏳ Esperando valores iniciales de suscripciones...");
     
   } catch (error) {
-    console.error("❌ Error general al actualizar widget desde Ubidots:", error);
-    // En caso de error total, asumir desconectado
-    updateFromUbidots(null, null, null, true, null);
-    showWidget();
+    console.error("❌ Error en inicialización del widget:", error);
+    showWidget(); // Mostrar widget aunque haya error
   }
 }
 
-// Inicializar widget
-console.log("🎨 Render inicial");
-render();  // Renderizar estado inicial
-
-// Cargar datos iniciales de Ubidots
-console.log("🚀 Iniciando carga de datos de Ubidots");
-updateWidgetFromUbidots();
-
-// Actualizar cada 5 segundos
-console.log("⏰ Configurando actualización automática cada 5 segundos");
-setInterval(updateWidgetFromUbidots, 5000);  // Intervalo de actualización
+// Iniciar la aplicación
+initializeWidget();
