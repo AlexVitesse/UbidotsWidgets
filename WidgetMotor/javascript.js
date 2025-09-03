@@ -50,9 +50,10 @@ const DISCONNECT_TIMEOUT = 30000;
 let disconnectTimer = null;
 let isCheckingDisconnection = false;
 
-// Contador de variables recibidas al suscribirse
+// Control de inicialización
 let initialValuesReceived = 0;
 const totalVariables = 3;
+let widgetInitialized = false;  // Nueva bandera para controlar si ya se inicializó
 
 // Función para formatear fecha y hora
 function formatDateTime(timestamp) {
@@ -330,10 +331,15 @@ function updateFromData(temperature, motorStatus, alertas, isDisconnected, lastU
     }
   }
 
-  // Si hubo cambios, actualizar la interfaz
+  // Si hubo cambios, actualizar la interfaz SOLO si el widget ya fue inicializado
   if (stateChanged) {
-    console.log("📊 Estado actualizado, llamando render()");
-    render();
+    console.log("📊 Estado actualizado");
+    if (widgetInitialized) {
+      console.log("📊 Widget inicializado, llamando render()");
+      render();
+    } else {
+      console.log("📊 Widget no inicializado aún, render pendiente");
+    }
   } else {
     console.log("📊 Sin cambios en el estado");
   }
@@ -383,6 +389,65 @@ function stopDisconnectTimer() {
   
   isCheckingDisconnection = false;
   console.log("⏸️ Timer de verificación de desconexión DETENIDO");
+}
+
+// Nueva función para determinar el estado de conexión inicial
+function determineInitialConnectionState() {
+  console.log("🔍 Determinando estado de conexión inicial...");
+  
+  if (!state.lastUpdateTime) {
+    console.log("⚠️ No hay timestamp en el estado, dispositivo desconectado");
+    return true; // isDisconnected = true
+  }
+  
+  const currentTime = Date.now();
+  const timeDifference = currentTime - state.lastUpdateTime;
+  
+  console.log(`🕐 Análisis de conexión inicial:`);
+  console.log(`   • Tiempo actual: ${currentTime} (${new Date(currentTime)})`);
+  console.log(`   • Último timestamp: ${state.lastUpdateTime} (${new Date(state.lastUpdateTime)})`);
+  console.log(`   • Diferencia: ${timeDifference}ms`);
+  console.log(`   • Límite desconexión: ${DISCONNECT_TIMEOUT}ms`);
+  
+  if (timeDifference > DISCONNECT_TIMEOUT) {
+    console.log(`⚠️ DATOS ANTIGUOS: ${timeDifference}ms > ${DISCONNECT_TIMEOUT}ms - DESCONECTADO`);
+    return true; // isDisconnected = true
+  } else {
+    console.log(`✅ DATOS FRESCOS: ${timeDifference}ms <= ${DISCONNECT_TIMEOUT}ms - CONECTADO`);
+    return false; // isDisconnected = false
+  }
+}
+
+// Función para finalizar la inicialización y mostrar el widget
+function finalizeInitialization() {
+  console.log("\n🎯 ===== FINALIZANDO INICIALIZACIÓN =====");
+  
+  // Determinar el estado de conexión basado en los datos recibidos
+  const isDisconnected = determineInitialConnectionState();
+  state.isDisconnected = isDisconnected;
+  
+  console.log(`🔌 Estado final de conexión: ${isDisconnected ? 'DESCONECTADO' : 'CONECTADO'}`);
+  
+  // Si está conectado, iniciar el timer de verificación
+  if (!isDisconnected && !isCheckingDisconnection) {
+    console.log("▶️ Iniciando timer de verificación para dispositivo conectado");
+    startDisconnectTimer();
+  }
+  
+  // Marcar como inicializado y renderizar
+  widgetInitialized = true;
+  console.log("✅ Widget marcado como inicializado");
+  
+  // Renderizar el estado final
+  console.log("🎨 Renderizando estado final antes de mostrar widget");
+  render();
+  
+  // Mostrar el widget
+  console.log("👁️ Mostrando widget con estado verificado");
+  showWidget();
+  
+  console.log("🎉 Inicialización completada exitosamente");
+  console.log("=======================================\n");
 }
 
 // Función para procesar el valor inicial recibido al suscribirse
@@ -450,11 +515,15 @@ function handleInitialValue(topic, message, isInitialSubscription = false) {
       console.log("❓ ➜ TÓPICO NO RECONOCIDO");
     }
     
-    // Si hemos recibido todos los valores iniciales, mostrar el widget
+    // Si hemos recibido todos los valores iniciales, finalizar inicialización
     if (isInitialSubscription && initialValuesReceived >= totalVariables) {
       console.log("\n🎉 ===== TODOS LOS VALORES INICIALES RECIBIDOS =====");
-      console.log("👁️ Mostrando widget...");
-      showWidget();
+      console.log("🚀 Procediendo a finalizar inicialización...");
+      
+      // Dar un pequeño delay para asegurar que todos los estados se han actualizado
+      setTimeout(() => {
+        finalizeInitialization();
+      }, 100);
     }
     
     console.log("================================================\n");
@@ -502,8 +571,6 @@ function connectMQTT() {
         });
       });
       console.log("==========================================");
-      
-      // El timer se iniciará cuando se reciban los primeros datos
     });
 
     // Evento de mensaje recibido
@@ -537,16 +604,21 @@ function connectMQTT() {
 
 // Función para mostrar el widget después de cargar los datos
 function showWidget() {
-  console.log("👁️ Mostrando widget");
-  if (loadingContainer) loadingContainer.style.display = 'none';  // Ocultar contenedor de carga
-  if (mainWidget) mainWidget.style.display = 'block';       // Mostrar widget principal
+  console.log("👁️ Mostrando widget - Ocultando spinner y mostrando contenido principal");
+  if (loadingContainer) {
+    loadingContainer.style.display = 'none';  // Ocultar contenedor de carga
+    console.log("📱 Spinner ocultado");
+  }
+  if (mainWidget) {
+    mainWidget.style.display = 'block';       // Mostrar widget principal
+    console.log("📱 Widget principal mostrado");
+  }
 }
 
 // ==================== MAIN INITIALIZATION ====================
 
-// Inicializar widget con estado por defecto
-console.log("🎨 Render inicial con estado por defecto");
-render();  // Renderizar estado inicial
+// NO renderizar estado inicial - el widget se mantiene oculto hasta la inicialización completa
+console.log("⏳ Widget en modo de carga - esperando datos de inicialización...");
 
 // Función principal de inicialización
 async function initializeWidget() {
@@ -565,10 +637,14 @@ async function initializeWidget() {
     
     console.log("✅ Inicialización MQTT completada");
     console.log("⏳ Esperando valores iniciales de suscripciones...");
+    console.log("🔒 Widget permanecerá oculto hasta completar verificación de conexión");
     
   } catch (error) {
     console.error("❌ Error en inicialización del widget:", error);
-    showWidget(); // Mostrar widget aunque haya error
+    // En caso de error, mostrar widget con estado por defecto
+    widgetInitialized = true;
+    render();
+    showWidget();
   }
 }
 
