@@ -67,10 +67,11 @@ body {
 /* Icono de alerta */
 .alert-icon {
   position: absolute;
-  top: 15px;
-  right: 15px;
-  width: 24px;
-  height: 24px;
+  top: 350px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 32px;
   opacity: 0;
   transition: opacity 0.3s ease;
   z-index: 10;
@@ -322,6 +323,14 @@ body {
     min-width: 280px;
   }
   
+  .alert-icon {
+    top: 290px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 28px;
+    height: 28px;
+  }
+  
   .last-update {
     font-size: 0.8rem;
     padding: 6px 10px;
@@ -360,18 +369,19 @@ body {
     max-width: 320px;
   }
   
-  .alert-icon, .disconnect-icon {
-    top: 12px;
-    width: 20px;
-    height: 20px;
+  .alert-icon {
+    top: 250px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 24px;
   }
   
-  .alert-icon {
-    right: 12px;
-  }
-
   .disconnect-icon {
+    top: 12px;
     left: 12px;
+    width: 20px;
+    height: 20px;
   }
   
   .last-update {
@@ -428,18 +438,19 @@ body {
     min-width: 240px;
   }
   
-  .alert-icon, .disconnect-icon {
-    top: 10px;
-    width: 18px;
-    height: 18px;
-  }
-
   .alert-icon {
-    right: 10px;
+    top: 210px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 20px;
+    height: 20px;
   }
 
   .disconnect-icon {
+    top: 10px;
     left: 10px;
+    width: 18px;
+    height: 18px;
   }
   
   .last-update {

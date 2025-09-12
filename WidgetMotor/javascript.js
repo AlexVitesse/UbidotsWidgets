@@ -55,6 +55,17 @@ let initialValuesReceived = 0;
 const totalVariables = 3;
 let widgetInitialized = false;  // Nueva bandera para controlar si ya se inicializó
 
+// ==================== NUEVAS VARIABLES PARA RECONEXIÓN ====================
+let reconnectTimer = null;           // Timer para intentos de reconexión
+let isReconnecting = false;          // Flag para evitar reconexiones múltiples
+let reconnectAttempts = 0;           // Contador de intentos de reconexión
+const MAX_RECONNECT_ATTEMPTS = 10;   // Máximo número de intentos
+const RECONNECT_INTERVAL = 10000;    // Intervalo entre intentos (10 segundos)
+let lastHeartbeat = null;            // Último heartbeat recibido
+let heartbeatTimer = null;           // Timer para verificar heartbeat
+const HEARTBEAT_INTERVAL = 15000;    // Verificar heartbeat cada 15 segundos
+const HEARTBEAT_TIMEOUT = 45000;     // Timeout para considerar que no hay heartbeat (45 segundos)
+
 // Función para formatear fecha y hora
 function formatDateTime(timestamp) {
   if (!timestamp) return "Sin datos";  // Si no hay timestamp, mostrar mensaje
@@ -95,9 +106,13 @@ function updateLastUpdateDisplay() {
   }
   
   // Remover clases previas de estado
-  lastUpdate.classList.remove('connected', 'disconnected');
+  lastUpdate.classList.remove('connected', 'disconnected', 'reconnecting');
   
-  if (state.isDisconnected) {
+  if (isReconnecting) {
+    // Si está intentando reconectar
+    lastUpdate.classList.add('reconnecting');
+    updateText.textContent = `Reconectando... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`;
+  } else if (state.isDisconnected) {
     // Si está desconectado, mostrar estado desconectado
     lastUpdate.classList.add('disconnected');
     if (state.lastUpdateTime) {
@@ -169,15 +184,15 @@ function handleAlertIcon() {
 
 // Función para manejar el icono de desconexión
 function handleDisconnectIcon() {
-  console.log("🔌 handleDisconnectIcon - isDisconnected:", state.isDisconnected);
+  console.log("🔌 handleDisconnectIcon - isDisconnected:", state.isDisconnected, "isReconnecting:", isReconnecting);
   
   if (!disconnectIcon) {
     console.error("❌ ERROR: disconnectIcon element no encontrado!");
     return;  // Salir si el elemento no existe
   }
 
-  if (state.isDisconnected) {
-    // Si está desconectado, mostrar icono con efecto de parpadeo
+  if (state.isDisconnected || isReconnecting) {
+    // Si está desconectado o reconectando, mostrar icono con efecto de parpadeo
     console.log("🔌 ACTIVANDO icono de desconexión (parpadeo)");
     disconnectIcon.classList.add('visible');
     disconnectIcon.classList.add('blinking');
@@ -315,11 +330,20 @@ function updateFromData(temperature, motorStatus, alertas, isDisconnected, lastU
   if (hasNewData && lastUpdateTimestamp) {
     console.log("📨 Nuevos datos recibidos del dispositivo");
     
+    // Actualizar heartbeat
+    lastHeartbeat = Date.now();
+    
     // Si estaba desconectado, reconectarlo
     if (state.isDisconnected) {
       console.log("🔄 Reconectando dispositivo...");
       state.isDisconnected = false;
       stateChanged = true;
+      
+      // Resetear contador de reconexión al recibir datos
+      if (isReconnecting) {
+        console.log("✅ Reconexión exitosa - reseteando flags");
+        stopReconnectionProcess();
+      }
     }
     
     // Iniciar/reiniciar timer de verificación solo si no está corriendo
@@ -328,6 +352,11 @@ function updateFromData(temperature, motorStatus, alertas, isDisconnected, lastU
       startDisconnectTimer();
     } else {
       console.log("🔄 Timer ya está corriendo, continuando verificación");
+    }
+    
+    // Iniciar verificación de heartbeat si no está activa
+    if (!heartbeatTimer) {
+      startHeartbeatCheck();
     }
   }
 
@@ -345,7 +374,189 @@ function updateFromData(temperature, motorStatus, alertas, isDisconnected, lastU
   }
 }
 
-// ==================== MQTT FUNCTIONS ====================
+// ==================== NUEVAS FUNCIONES DE RECONEXIÓN ====================
+
+// Función para verificar heartbeat (comunicación activa)
+function checkHeartbeat() {
+  if (!lastHeartbeat) {
+    console.log("⚠️ No hay registro de heartbeat inicial");
+    return;
+  }
+  
+  const currentTime = Date.now();
+  const timeSinceHeartbeat = currentTime - lastHeartbeat;
+  
+  console.log(`💓 Verificando heartbeat: ${timeSinceHeartbeat}ms desde último dato`);
+  
+  if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT) {
+    console.log(`💔 HEARTBEAT PERDIDO: ${timeSinceHeartbeat}ms > ${HEARTBEAT_TIMEOUT}ms`);
+    console.log("🔄 Iniciando proceso de reconexión por heartbeat perdido");
+    triggerReconnection("heartbeat_lost");
+  }
+}
+
+// Función para iniciar verificación de heartbeat
+function startHeartbeatCheck() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+  }
+  
+  heartbeatTimer = setInterval(checkHeartbeat, HEARTBEAT_INTERVAL);
+  console.log("💓 Timer de verificación de heartbeat INICIADO");
+}
+
+// Función para detener verificación de heartbeat
+function stopHeartbeatCheck() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  console.log("💓 Timer de verificación de heartbeat DETENIDO");
+}
+
+// Función para limpiar cliente MQTT
+function cleanupMQTTClient() {
+  if (mqttClient) {
+    console.log("🧹 Limpiando cliente MQTT...");
+    
+    try {
+      // Remover todos los listeners para evitar memory leaks
+      mqttClient.removeAllListeners();
+      
+      // Cerrar conexión si está activa
+      if (mqttClient.connected) {
+        mqttClient.end(true); // Force close
+      }
+    } catch (error) {
+      console.error("❌ Error al limpiar cliente MQTT:", error);
+    }
+    
+    mqttClient = null;
+    console.log("✅ Cliente MQTT limpiado");
+  }
+}
+
+// Función para detener el proceso de reconexión
+function stopReconnectionProcess() {
+  console.log("⏹️ Deteniendo proceso de reconexión...");
+  
+  isReconnecting = false;
+  reconnectAttempts = 0;
+  
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  
+  console.log("✅ Proceso de reconexión detenido");
+}
+
+// Función para disparar el proceso de reconexión
+function triggerReconnection(reason = "unknown") {
+  console.log(`🔄 Disparando reconexión por: ${reason}`);
+  
+  if (isReconnecting) {
+    console.log("⚠️ Ya hay un proceso de reconexión en curso");
+    return;
+  }
+  
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.log("❌ Máximo número de intentos de reconexión alcanzado");
+    return;
+  }
+  
+  // Marcar dispositivo como desconectado
+  if (!state.isDisconnected) {
+    updateFromData(null, null, null, true, state.lastUpdateTime);
+  }
+  
+  // Detener timers actuales
+  stopDisconnectTimer();
+  stopHeartbeatCheck();
+  
+  // Iniciar proceso de reconexión
+  startReconnectionProcess();
+}
+
+// Función para iniciar el proceso de reconexión
+function startReconnectionProcess() {
+  console.log("\n🔄 ===== INICIANDO PROCESO DE RECONEXIÓN =====");
+  
+  isReconnecting = true;
+  reconnectAttempts++;
+  
+  console.log(`🔄 Intento de reconexión ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+  
+  // Actualizar UI para mostrar estado de reconexión
+  render();
+  
+  // Limpiar cliente actual
+  cleanupMQTTClient();
+  
+  // Intentar reconectar después del intervalo
+  reconnectTimer = setTimeout(() => {
+    console.log("🔌 Ejecutando intento de reconexión...");
+    attemptReconnection();
+  }, RECONNECT_INTERVAL);
+  
+  console.log(`⏰ Siguiente intento programado en ${RECONNECT_INTERVAL}ms`);
+  console.log("==============================================\n");
+}
+
+// Función para intentar reconectar
+function attemptReconnection() {
+  console.log(`\n🔄 ===== INTENTO DE RECONEXIÓN ${reconnectAttempts} =====`);
+  
+  try {
+    // Resetear valores de inicialización
+    initialValuesReceived = 0;
+    
+    // Crear nuevo cliente MQTT
+    console.log("🔌 Creando nueva conexión MQTT...");
+    connectMQTT();
+    
+    // Configurar timeout para este intento
+    const attemptTimeout = setTimeout(() => {
+      console.log("⏰ Timeout del intento de reconexión");
+      
+      if (isReconnecting && initialValuesReceived < totalVariables) {
+        console.log("❌ Reconexión falló por timeout");
+        
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          console.log("🔄 Programando siguiente intento...");
+          startReconnectionProcess();
+        } else {
+          console.log("❌ Máximo de intentos alcanzado - deteniendo reconexión");
+          stopReconnectionProcess();
+        }
+      }
+    }, RECONNECT_INTERVAL);
+    
+    // Limpiar timeout si la reconexión es exitosa
+    const originalFinalizeInitialization = finalizeInitialization;
+    finalizeInitialization = function() {
+      clearTimeout(attemptTimeout);
+      console.log("✅ Reconexión exitosa!");
+      stopReconnectionProcess();
+      originalFinalizeInitialization();
+    };
+    
+  } catch (error) {
+    console.error("❌ Error en intento de reconexión:", error);
+    
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      console.log("🔄 Reintentando después del error...");
+      startReconnectionProcess();
+    } else {
+      console.log("❌ Máximo de intentos alcanzado después del error");
+      stopReconnectionProcess();
+    }
+  }
+  
+  console.log("============================================\n");
+}
+
+// ==================== MQTT FUNCTIONS (MODIFICADAS) ====================
 
 // Función para verificar desconexión basada en timestamp del último dato
 function checkDeviceDisconnection() {
@@ -364,6 +575,9 @@ function checkDeviceDisconnection() {
     console.log(`⚠️ DISPOSITIVO DESCONECTADO: ${timeDifference}ms > ${DISCONNECT_TIMEOUT}ms`);
     updateFromData(null, null, null, true, state.lastUpdateTime);
     stopDisconnectTimer(); // Parar el timer cuando se desconecta
+    
+    // Disparar reconexión
+    triggerReconnection("timeout");
   } else {
     console.log(`✅ Dispositivo conectado: ${timeDifference}ms <= ${DISCONNECT_TIMEOUT}ms`);
   }
@@ -428,10 +642,18 @@ function finalizeInitialization() {
   
   console.log(`🔌 Estado final de conexión: ${isDisconnected ? 'DESCONECTADO' : 'CONECTADO'}`);
   
-  // Si está conectado, iniciar el timer de verificación
-  if (!isDisconnected && !isCheckingDisconnection) {
-    console.log("▶️ Iniciando timer de verificación para dispositivo conectado");
-    startDisconnectTimer();
+  // Si está conectado, iniciar los timers de verificación
+  if (!isDisconnected) {
+    if (!isCheckingDisconnection) {
+      console.log("▶️ Iniciando timer de verificación para dispositivo conectado");
+      startDisconnectTimer();
+    }
+    
+    if (!heartbeatTimer) {
+      console.log("💓 Iniciando verificación de heartbeat");
+      lastHeartbeat = Date.now(); // Establecer heartbeat inicial
+      startHeartbeatCheck();
+    }
   }
   
   // Marcar como inicializado y renderizar
@@ -534,23 +756,33 @@ function handleInitialValue(topic, message, isInitialSubscription = false) {
   }
 }
 
-// Función para conectar a MQTT
+// Función para conectar a MQTT (MODIFICADA CON RECONEXIÓN)
 function connectMQTT() {
   console.log("🔌 Iniciando conexión MQTT a Ubidots...");
   
   try {
+    // Generar nuevo clientId para cada conexión
+    const newClientId = 'mqttjs_' + Math.random().toString(16).substr(2, 8);
+    console.log(`🆔 Nuevo Client ID: ${newClientId}`);
+    
     mqttClient = mqtt.connect(MQTT_HOST, {
-      clientId: clientId,
+      clientId: newClientId,
       username: UBIDOTS_TOKEN,
       keepalive: 60,
       reconnectPeriod: 5000,
-      connectTimeout: 10000
+      connectTimeout: 10000,
+      clean: true // Importante para evitar sesiones anteriores
     });
 
     // Evento de conexión exitosa
     mqttClient.on('connect', () => {
       console.log("✅ Conectado al broker MQTT de Ubidots");
-      console.log(`🆔 Client ID: ${clientId}`);
+      console.log(`🆔 Client ID: ${newClientId}`);
+      
+      // Si es una reconexión, resetear el flag
+      if (isReconnecting) {
+        console.log("🔄 Reconexión MQTT exitosa");
+      }
       
       // Suscribirse a todos los tópicos de las variables
       const topics = [
@@ -560,13 +792,29 @@ function connectMQTT() {
       ];
       
       console.log("\n🔔 ===== SUSCRIBIÉNDOSE A TÓPICOS =====");
+      let subscriptionsCompleted = 0;
+      
       topics.forEach((topic, index) => {
-        mqttClient.subscribe(topic, (err) => {
+        mqttClient.subscribe(topic, { qos: 1 }, (err) => {
           if (!err) {
             console.log(`📡 [${index + 1}/${topics.length}] Suscrito a: ${topic}`);
             console.log(`    ➜ Esperando último valor publicado...`);
+            subscriptionsCompleted++;
+            
+            // Si todas las suscripciones están completas
+            if (subscriptionsCompleted === topics.length) {
+              console.log("✅ Todas las suscripciones completadas");
+            }
           } else {
             console.error(`❌ Error al suscribirse a ${topic}:`, err);
+            
+            // Si falla la suscripción y estamos en proceso de reconexión
+            if (isReconnecting) {
+              console.log("🔄 Error en suscripción durante reconexión, reintentando...");
+              if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                setTimeout(() => startReconnectionProcess(), 2000);
+              }
+            }
           }
         });
       });
@@ -583,20 +831,54 @@ function connectMQTT() {
     // Evento de error
     mqttClient.on('error', (err) => {
       console.error("❌ Error MQTT:", err);
+      
+      // Si hay error y no estamos ya reconectando, disparar reconexión
+      if (!isReconnecting && widgetInitialized) {
+        console.log("🔄 Error MQTT detectado, iniciando reconexión...");
+        triggerReconnection("mqtt_error");
+      }
     });
 
     // Evento de desconexión
     mqttClient.on('close', () => {
       console.log("🔌 Conexión MQTT cerrada");
+      
+      // Si no estamos ya reconectando y el widget está inicializado, disparar reconexión
+      if (!isReconnecting && widgetInitialized) {
+        console.log("🔄 Conexión MQTT cerrada inesperadamente, iniciando reconexión...");
+        triggerReconnection("connection_closed");
+      }
     });
 
-    // Evento de reconexión
+    // Evento de reconexión (del cliente MQTT automático)
     mqttClient.on('reconnect', () => {
-      console.log("🔄 Reintentando conexión MQTT...");
+      console.log("🔄 Cliente MQTT reintentando conexión automática...");
+    });
+
+    // Evento de desconexión (cuando se pierde la conexión)
+    mqttClient.on('disconnect', () => {
+      console.log("🔌 Cliente MQTT desconectado");
+    });
+
+    // Evento de conexión offline
+    mqttClient.on('offline', () => {
+      console.log("📱 Cliente MQTT offline");
+      
+      // Si no estamos ya reconectando, disparar reconexión
+      if (!isReconnecting && widgetInitialized) {
+        console.log("🔄 Cliente MQTT offline, iniciando reconexión...");
+        triggerReconnection("client_offline");
+      }
     });
 
   } catch (error) {
     console.error("❌ Error al conectar MQTT:", error);
+    
+    // Si hay error durante la conexión y estamos reconectando
+    if (isReconnecting && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      console.log("🔄 Error en conexión durante reconexión, reintentando...");
+      setTimeout(() => startReconnectionProcess(), 2000);
+    }
   }
 }
 
@@ -622,13 +904,16 @@ console.log("⏳ Widget en modo de carga - esperando datos de inicialización...
 
 // Función principal de inicialización
 async function initializeWidget() {
-  console.log("\n🚀 ===== INICIANDO WIDGET UBIDOTS (SOLO MQTT) =====");
+  console.log("\n🚀 ===== INICIANDO WIDGET UBIDOTS CON RECONEXIÓN =====");
   console.log("📋 Configuración:");
   console.log(`   • Device: ${DEVICE_LABEL}`);
   console.log(`   • Variables: ${Object.values(VARIABLES).join(', ')}`);
   console.log(`   • Timeout desconexión: ${DISCONNECT_TIMEOUT}ms`);
+  console.log(`   • Timeout heartbeat: ${HEARTBEAT_TIMEOUT}ms`);
+  console.log(`   • Intervalo reconexión: ${RECONNECT_INTERVAL}ms`);
+  console.log(`   • Máx intentos reconexión: ${MAX_RECONNECT_ATTEMPTS}`);
   console.log(`   • Host MQTT: ${MQTT_HOST}`);
-  console.log("===============================================");
+  console.log("===================================================");
   
   try {
     // Conectar directamente a MQTT (sin llamadas API)
@@ -647,6 +932,76 @@ async function initializeWidget() {
     showWidget();
   }
 }
+
+// ==================== CLEANUP AL CERRAR PÁGINA ====================
+
+// Limpiar recursos al cerrar la página
+window.addEventListener('beforeunload', () => {
+  console.log("🧹 Limpiando recursos antes de cerrar página...");
+  
+  // Detener todos los timers
+  stopDisconnectTimer();
+  stopHeartbeatCheck();
+  stopReconnectionProcess();
+  
+  // Limpiar cliente MQTT
+  cleanupMQTTClient();
+  
+  // Detener parpadeo del motor
+  if (blinkInterval) {
+    clearInterval(blinkInterval);
+    blinkInterval = null;
+  }
+  
+  console.log("✅ Limpieza completada");
+});
+
+// ==================== FUNCIÓN DE DIAGNÓSTICO ====================
+
+// Función para diagnóstico del estado del widget (útil para debug)
+function getWidgetDiagnostics() {
+  const diagnostics = {
+    // Estado principal
+    state: { ...state },
+    
+    // Estado de conexión
+    connection: {
+      isReconnecting,
+      reconnectAttempts,
+      mqttConnected: mqttClient ? mqttClient.connected : false,
+      lastHeartbeat: lastHeartbeat ? new Date(lastHeartbeat) : null
+    },
+    
+    // Timers activos
+    timers: {
+      disconnectTimer: !!disconnectTimer,
+      heartbeatTimer: !!heartbeatTimer,
+      reconnectTimer: !!reconnectTimer,
+      blinkInterval: !!blinkInterval
+    },
+    
+    // Estado de inicialización
+    initialization: {
+      widgetInitialized,
+      initialValuesReceived,
+      totalVariables,
+      isCheckingDisconnection
+    },
+    
+    // Timestamps importantes
+    timestamps: {
+      lastUpdateTime: state.lastUpdateTime ? new Date(state.lastUpdateTime) : null,
+      lastHeartbeat: lastHeartbeat ? new Date(lastHeartbeat) : null,
+      currentTime: new Date()
+    }
+  };
+  
+  console.table(diagnostics);
+  return diagnostics;
+}
+
+// Hacer la función de diagnóstico disponible globalmente para debug
+window.getWidgetDiagnostics = getWidgetDiagnostics;
 
 // Iniciar la aplicación
 initializeWidget();
