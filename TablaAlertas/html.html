@@ -1,0 +1,74 @@
+<div id="alertsWidget" class="alerts-widget">
+  <div id="loadingContainer" class="loading-container">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Cargando alertas...</div>
+  </div>
+  
+  <div id="mainWidget" class="main-widget" style="display: none;">
+    <div class="widget-header">
+      <h2 class="widget-title">
+        <span class="alert-icon">🚨</span>
+        Sistema de Alertas
+      </h2>
+      <div id="connectionStatus" class="connection-status connected">
+        <div class="status-indicator"></div>
+        <span class="status-text">Conectado</span>
+      </div>
+    </div>
+    
+    <div class="alerts-table-container">
+      <table class="alerts-table">
+        <thead>
+          <tr>
+            <th>Estado</th>
+            <th>Tipo de Alerta</th>
+            <th>Área</th>
+            <th>Última Actualización</th>
+          </tr>
+        </thead>
+        <tbody id="alertsTableBody">
+          <tr id="alert-temperatura" class="alert-row" data-alert-type="temperatura" data-original-order="0">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Temperatura</td>
+            <td class="alert-area">Sistema Térmico</td>
+            <td id="temp-last-update" class="last-update">--</td>
+          </tr>
+          
+          <tr id="alert-vibracion" class="alert-row" data-alert-type="vibracion" data-original-order="1">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Vibración</td>
+            <td class="alert-area">Sistema Mecánico</td>
+            <td id="vibration-last-update" class="last-update">--</td>
+          </tr>
+          
+          <tr id="alert-presion" class="alert-row" data-alert-type="presion" data-original-order="2">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Presión</td>
+            <td class="alert-area">Sistema Hidráulico</td>
+            <td id="pressure-last-update" class="last-update">--</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="summary-footer">
+      <div class="summary-item">
+        <span class="summary-label">Total Alertas Activas:</span>
+        <span id="totalAlerts" class="summary-value">0</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Última Sincronización:</span>
+        <span id="lastSync" class="summary-value">--</span>
+      </div>
+    </div>
+  </div>
+</div>
