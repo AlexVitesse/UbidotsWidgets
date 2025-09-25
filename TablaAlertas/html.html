@@ -3,67 +3,323 @@
     <div class="loading-spinner"></div>
     <div class="loading-text">Cargando alertas...</div>
   </div>
-  
+     
   <div id="mainWidget" class="main-widget" style="display: none;">
     <div class="widget-header">
       <h2 class="widget-title">
         <span class="alert-icon">🚨</span>
-        Sistema de Alertas - Vibración RMS
+        <span class="title-text">Sistema de Alertas - Vibe IQ Runtime</span>
+        <img id="errorIcon" class="error-icon" src="https://cdn-icons-png.flaticon.com/512/10361/10361351.png" alt="Error" style="display: none;">
       </h2>
       <div id="connectionStatus" class="connection-status connected">
         <div class="status-indicator"></div>
         <span class="status-text">Conectado</span>
       </div>
     </div>
-    
+         
     <div class="alerts-table-container">
       <table class="alerts-table">
         <thead>
           <tr>
             <th>Estado</th>
             <th>Tipo de Alerta</th>
-            <th>Dirección Modbus</th>
-            <th>Área</th>
-            <th>Última Actualización</th>
+            <th>Registro</th>
+            <th>Bit</th>
+            <th>Eje/Tipo</th>
           </tr>
         </thead>
         <tbody id="alertsTableBody">
-          <tr id="alert-x_velocity" class="alert-row" data-alert-type="x_velocity" data-original-order="0">
+          <!-- Registro 46038 - Bits 0-15 -->
+          <tr id="alert-x_vel_acute_warn" class="alert-row" data-alert-type="x_vel_acute_warn" data-original-order="0">
             <td class="status-cell">
               <div class="status-indicator-cell normal"></div>
               <span class="status-text-cell">Normal</span>
             </td>
-            <td class="alert-type">X RMS Velocity</td>
-            <td class="address-cell">46024</td>
-            <td class="alert-area">Vibración X</td>
-            <td id="x-velocity-last-update" class="last-update">--</td>
+            <td class="alert-type">X Velocity Acute Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">0</td>
+            <td class="alert-area">Eje X</td>
           </tr>
           
-          <tr id="alert-y_velocity" class="alert-row" data-alert-type="y_velocity" data-original-order="1">
+          <tr id="alert-x_vel_acute_alarm" class="alert-row" data-alert-type="x_vel_acute_alarm" data-original-order="1">
             <td class="status-cell">
               <div class="status-indicator-cell normal"></div>
               <span class="status-text-cell">Normal</span>
             </td>
-            <td class="alert-type">Y RMS Velocity</td>
-            <td class="address-cell">46025</td>
-            <td class="alert-area">Vibración Y</td>
-            <td id="y-velocity-last-update" class="last-update">--</td>
+            <td class="alert-type">X Velocity Acute Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">1</td>
+            <td class="alert-area">Eje X</td>
           </tr>
           
-          <tr id="alert-z_velocity" class="alert-row" data-alert-type="z_velocity" data-original-order="2">
+          <tr id="alert-x_vel_chronic_warn" class="alert-row" data-alert-type="x_vel_chronic_warn" data-original-order="2">
             <td class="status-cell">
               <div class="status-indicator-cell normal"></div>
               <span class="status-text-cell">Normal</span>
             </td>
-            <td class="alert-type">Z RMS Velocity</td>
-            <td class="address-cell">46026</td>
-            <td class="alert-area">Vibración Z</td>
-            <td id="z-velocity-last-update" class="last-update">--</td>
+            <td class="alert-type">X Velocity Chronic Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">2</td>
+            <td class="alert-area">Eje X</td>
+          </tr>
+          
+          <tr id="alert-x_vel_chronic_alarm" class="alert-row" data-alert-type="x_vel_chronic_alarm" data-original-order="3">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">X Velocity Chronic Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">3</td>
+            <td class="alert-area">Eje X</td>
+          </tr>
+          
+          <tr id="alert-x_accel_acute_warn" class="alert-row" data-alert-type="x_accel_acute_warn" data-original-order="4">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">X HF Accel Acute Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">4</td>
+            <td class="alert-area">Eje X</td>
+          </tr>
+          
+          <tr id="alert-x_accel_acute_alarm" class="alert-row" data-alert-type="x_accel_acute_alarm" data-original-order="5">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">X HF Accel Acute Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">5</td>
+            <td class="alert-area">Eje X</td>
+          </tr>
+          
+          <tr id="alert-x_accel_chronic_warn" class="alert-row" data-alert-type="x_accel_chronic_warn" data-original-order="6">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">X HF Accel Chronic Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">6</td>
+            <td class="alert-area">Eje X</td>
+          </tr>
+          
+          <tr id="alert-x_accel_chronic_alarm" class="alert-row" data-alert-type="x_accel_chronic_alarm" data-original-order="7">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">X HF Accel Chronic Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">7</td>
+            <td class="alert-area">Eje X</td>
+          </tr>
+          
+          <tr id="alert-y_vel_acute_warn" class="alert-row" data-alert-type="y_vel_acute_warn" data-original-order="8">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y Velocity Acute Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">8</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <tr id="alert-y_vel_acute_alarm" class="alert-row" data-alert-type="y_vel_acute_alarm" data-original-order="9">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y Velocity Acute Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">9</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <tr id="alert-y_vel_chronic_warn" class="alert-row" data-alert-type="y_vel_chronic_warn" data-original-order="10">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y Velocity Chronic Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">10</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <tr id="alert-y_vel_chronic_alarm" class="alert-row" data-alert-type="y_vel_chronic_alarm" data-original-order="11">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y Velocity Chronic Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">11</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <tr id="alert-y_accel_acute_warn" class="alert-row" data-alert-type="y_accel_acute_warn" data-original-order="12">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y HF Accel Acute Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">12</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <tr id="alert-y_accel_acute_alarm" class="alert-row" data-alert-type="y_accel_acute_alarm" data-original-order="13">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y HF Accel Acute Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">13</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <tr id="alert-y_accel_chronic_warn" class="alert-row" data-alert-type="y_accel_chronic_warn" data-original-order="14">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y HF Accel Chronic Warning</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">14</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <tr id="alert-y_accel_chronic_alarm" class="alert-row" data-alert-type="y_accel_chronic_alarm" data-original-order="15">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Y HF Accel Chronic Alarm</td>
+            <td class="address-cell">46038</td>
+            <td class="bit-cell">15</td>
+            <td class="alert-area">Eje Y</td>
+          </tr>
+          
+          <!-- Registro 46039 - Bits 0-9 -->
+          <tr id="alert-z_vel_acute_warn" class="alert-row" data-alert-type="z_vel_acute_warn" data-original-order="16">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z Velocity Acute Warning</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">0</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-z_vel_acute_alarm" class="alert-row" data-alert-type="z_vel_acute_alarm" data-original-order="17">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z Velocity Acute Alarm</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">1</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-z_vel_chronic_warn" class="alert-row" data-alert-type="z_vel_chronic_warn" data-original-order="18">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z Velocity Chronic Warning</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">2</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-z_vel_chronic_alarm" class="alert-row" data-alert-type="z_vel_chronic_alarm" data-original-order="19">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z Velocity Chronic Alarm</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">3</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-z_accel_acute_warn" class="alert-row" data-alert-type="z_accel_acute_warn" data-original-order="20">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z HF Accel Acute Warning</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">4</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-z_accel_acute_alarm" class="alert-row" data-alert-type="z_accel_acute_alarm" data-original-order="21">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z HF Accel Acute Alarm</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">5</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-z_accel_chronic_warn" class="alert-row" data-alert-type="z_accel_chronic_warn" data-original-order="22">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z HF Accel Chronic Warning</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">6</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-z_accel_chronic_alarm" class="alert-row" data-alert-type="z_accel_chronic_alarm" data-original-order="23">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Z HF Accel Chronic Alarm</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">7</td>
+            <td class="alert-area">Eje Z</td>
+          </tr>
+          
+          <tr id="alert-temp_warn" class="alert-row" data-alert-type="temp_warn" data-original-order="24">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Temperature Warning</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">8</td>
+            <td class="alert-area">Temperatura</td>
+          </tr>
+          
+          <tr id="alert-temp_alarm" class="alert-row" data-alert-type="temp_alarm" data-original-order="25">
+            <td class="status-cell">
+              <div class="status-indicator-cell normal"></div>
+              <span class="status-text-cell">Normal</span>
+            </td>
+            <td class="alert-type">Temperature Alarm</td>
+            <td class="address-cell">46039</td>
+            <td class="bit-cell">9</td>
+            <td class="alert-area">Temperatura</td>
           </tr>
         </tbody>
       </table>
     </div>
-    
+         
     <div class="summary-footer">
       <div class="summary-item">
         <span class="summary-label">Total Alertas Activas:</span>
@@ -74,8 +330,8 @@
         <span id="lastSync" class="summary-value">--</span>
       </div>
       <div class="summary-item">
-        <span class="summary-label">Variable Binaria:</span>
-        <span id="binaryValue" class="summary-value">0 (000)</span>
+        <span class="summary-label">Registros:</span>
+        <span id="registersValue" class="summary-value">46038: 0 | 46039: 0</span>
       </div>
     </div>
   </div>

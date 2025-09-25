@@ -146,6 +146,8 @@ const alertsState = {
     }
   },
   isConnected: false,
+  connectionValue: null, // NUEVO: valor de la variable connected (0 o 1)
+  hasSystemError: false, // NUEVO: indica si el sistema tiene error (connected = 0)
   totalAlerts: 0,
   lastSync: null,
   previousAlertStates: {},
@@ -153,7 +155,7 @@ const alertsState = {
   lastRegister46039: 0,
   connectionRetryCount: 0,
   maxRetryAttempts: 3,
-  wasDisconnected: false, // Para manejar reconexión
+  wasDisconnected: false,
   lastConnectionCheck: null
 };
 
@@ -166,6 +168,7 @@ const totalAlertsElement = document.getElementById('totalAlerts');
 const lastSyncElement = document.getElementById('lastSync');
 const registersValueElement = document.getElementById('registersValue');
 const alertsTableBody = document.getElementById('alertsTableBody');
+const errorIcon = document.getElementById('errorIcon'); // NUEVO: icono de error
 
 // Generar referencias dinámicamente para todas las alertas
 const alertRows = {};
@@ -176,14 +179,14 @@ Object.keys(alertsState.alerts).forEach(alertType => {
   lastUpdateElements[alertType] = document.getElementById(`${alertType}-last-update`);
 });
 
-// Configuración de Ubidots para tres variables (añadimos connected)
+// Configuración de Ubidots para tres variables
 const UBIDOTS_CONFIG = {
   TOKEN: "BBUS-l3bIlQTmfEKN7MM6NJLYUMZuYvJ4wU",
   DEVICE_LABEL: "vibration_data",
   VARIABLES: {
     REGISTER_46038: "rg_vbiq_38",
     REGISTER_46039: "rg_vbiq_39",
-    CONNECTED: "connected" // Nueva variable para estado de conexión
+    CONNECTED: "connected"
   }
 };
 
@@ -222,7 +225,7 @@ function processModbusRegister(registerValue, registerAddress, timestamp) {
         previousState,
         currentState: isAlert,
         bitPosition,
-        alertType: alertData.type // 'warning' o 'alarm'
+        alertType: alertData.type
       });
     }
     
@@ -306,13 +309,46 @@ function formatDateTime(timestamp) {
   }
 }
 
-// FUNCIÓN: Actualizar estado de conexión con manejo de reconexión
-function updateConnectionStatus(isConnected, connectionTimestamp = null) {
-  console.log(`🔌 Actualizando estado conexión: ${isConnected} (anterior: ${alertsState.isConnected})`);
+// FUNCIÓN: Mostrar/ocultar icono de error del sistema
+function updateSystemErrorIcon(showError) {
+  if (showError) {
+    errorIcon.style.display = 'inline-block';
+    console.log("🚨 Mostrando icono de error del sistema");
+  } else {
+    errorIcon.style.display = 'none';
+    console.log("✅ Ocultando icono de error del sistema");
+  }
+}
+
+// FUNCIÓN: Actualizar estado de conexión con manejo de valor de variable connected
+function updateConnectionStatus(isConnected, connectionTimestamp = null, connectedValue = null) {
+  console.log(`🔌 Actualizando estado conexión: ${isConnected} (valor: ${connectedValue}, anterior: ${alertsState.isConnected})`);
   
   const wasConnected = alertsState.isConnected;
   alertsState.isConnected = isConnected;
   alertsState.lastConnectionCheck = connectionTimestamp || Date.now();
+  
+  // NUEVO: Actualizar valor de variable connected y estado de error del sistema
+  if (connectedValue !== null) {
+    const previousValue = alertsState.connectionValue;
+    alertsState.connectionValue = connectedValue;
+    
+    // Si el valor de connected es 0, mostrar error del sistema
+    if (connectedValue === 0) {
+      alertsState.hasSystemError = true;
+      updateSystemErrorIcon(true);
+      console.log("🔴 ERROR DEL SISTEMA: Variable 'connected' = 0");
+    } else if (connectedValue === 1) {
+      alertsState.hasSystemError = false;
+      updateSystemErrorIcon(false);
+      console.log("🟢 SISTEMA OK: Variable 'connected' = 1");
+    }
+    
+    // Log del cambio de valor
+    if (previousValue !== connectedValue) {
+      console.log(`📡 Cambio en variable 'connected': ${previousValue} → ${connectedValue}`);
+    }
+  }
   
   // Detectar reconexión
   if (!wasConnected && isConnected && alertsState.wasDisconnected) {
@@ -335,13 +371,25 @@ function updateConnectionStatus(isConnected, connectionTimestamp = null) {
     alertsState.wasDisconnected = true;
   }
   
-  // Actualizar UI
-  if (isConnected) {
-    connectionStatus.classList.remove('disconnected');
+  // Actualizar UI del estado de conexión
+  updateConnectionStatusUI(isConnected);
+}
+
+// FUNCIÓN: Actualizar UI del estado de conexión
+function updateConnectionStatusUI(isConnected) {
+  // Limpiar clases anteriores
+  connectionStatus.classList.remove('connected', 'disconnected', 'error');
+  
+  if (alertsState.hasSystemError) {
+    // Error del sistema (connected = 0)
+    connectionStatus.classList.add('error');
+    statusText.textContent = 'Error del Sistema';
+  } else if (isConnected) {
+    // Conectado normalmente
     connectionStatus.classList.add('connected');
     statusText.textContent = 'Conectado';
   } else {
-    connectionStatus.classList.remove('connected');
+    // Desconectado (por timeout)
     connectionStatus.classList.add('disconnected');
     statusText.textContent = `Desconectado${alertsState.connectionRetryCount > 0 ? ` (reintento ${alertsState.connectionRetryCount}/${alertsState.maxRetryAttempts})` : ''}`;
   }
@@ -527,9 +575,19 @@ function updateTotalAlerts() {
 
 // Función para actualizar valores de registros en UI
 function updateRegistersDisplay() {
-  const connectionIndicator = alertsState.isConnected ? '🟢' : '🔴';
+  // Indicador visual mejorado
+  let connectionIndicator;
+  if (alertsState.hasSystemError) {
+    connectionIndicator = '🔴'; // Error del sistema
+  } else if (alertsState.isConnected) {
+    connectionIndicator = '🟢'; // Conectado
+  } else {
+    connectionIndicator = '🟡'; // Desconectado por timeout
+  }
+  
+  const connectedValueText = alertsState.connectionValue !== null ? ` (${alertsState.connectionValue})` : '';
   registersValueElement.textContent = 
-    `${connectionIndicator} 46038: ${alertsState.lastRegister46038} | 46039: ${alertsState.lastRegister46039}`;
+    `${connectionIndicator} 46038: ${alertsState.lastRegister46038} | 46039: ${alertsState.lastRegister46039}${connectedValueText}`;
 }
 
 // Función para actualizar timestamp de sincronización
@@ -580,9 +638,9 @@ async function getUbidotsVariableData(variableName) {
   }
 }
 
-// FUNCIÓN: Verificar estado de conexión usando timestamp de variable 'connected'
+// FUNCIÓN: Verificar estado de conexión y valor de variable 'connected'
 async function checkConnectionFromUbidots() {
-  console.log("🔍 Verificando estado de conexión desde Ubidots (por timestamp)...");
+  console.log("🔍 Verificando estado de conexión desde Ubidots...");
   
   try {
     const connectionData = await getUbidotsVariableData(UBIDOTS_CONFIG.VARIABLES.CONNECTED);
@@ -591,19 +649,23 @@ async function checkConnectionFromUbidots() {
       const currentTime = Date.now();
       const lastDataTime = connectionData.timestamp;
       const timeDifferenceSeconds = (currentTime - lastDataTime) / 1000;
+      const connectedValue = parseInt(connectionData.value) || 0;
       
-      // Si han pasado más de 10 segundos (margen de seguridad sobre los 5s), está desconectado
+      // Si han pasado más de 10 segundos, está desconectado por timeout
       const CONNECTION_TIMEOUT = 10; // segundos
-      const isConnected = timeDifferenceSeconds <= CONNECTION_TIMEOUT;
+      const isConnectedByTime = timeDifferenceSeconds <= CONNECTION_TIMEOUT;
       
-      console.log(`🔌 Timestamp de 'connected': ${formatDateTime(lastDataTime)}`);
+      console.log(`🔌 Variable 'connected': ${connectedValue} (timestamp: ${formatDateTime(lastDataTime)})`);
       console.log(`⏰ Tiempo transcurrido: ${timeDifferenceSeconds.toFixed(1)}s`);
-      console.log(`📡 Estado: ${isConnected ? 'CONECTADO' : 'DESCONECTADO'} (límite: ${CONNECTION_TIMEOUT}s)`);
+      console.log(`📡 Estado por tiempo: ${isConnectedByTime ? 'CONECTADO' : 'DESCONECTADO'} (límite: ${CONNECTION_TIMEOUT}s)`);
       
-      updateConnectionStatus(isConnected, lastDataTime);
-      return isConnected;
+      // El estado final depende del tiempo Y del valor de connected
+      const finalConnectionState = isConnectedByTime; // Solo importa el timeout para conexión/desconexión
+      
+      updateConnectionStatus(finalConnectionState, lastDataTime, connectedValue);
+      return finalConnectionState;
     } else {
-      console.warn("⚠️ No se pudo obtener timestamp de conexión, asumiendo desconectado");
+      console.warn("⚠️ No se pudo obtener datos de conexión, asumiendo desconectado");
       updateConnectionStatus(false);
       return false;
     }
@@ -637,12 +699,12 @@ async function handleConnectionRetry() {
   return false;
 }
 
-// FUNCIÓN: Actualizar todas las alertas desde Ubidots (versión mejorada con conexión)
+// FUNCIÓN: Actualizar todas las alertas desde Ubidots
 async function updateAlertsFromUbidots() {
-  console.log("\n🚀 ===== ACTUALIZANDO ALERTAS DESDE UBIDOTS (CON VERIFICACIÓN DE CONEXIÓN) =====");
+  console.log("\n🚀 ===== ACTUALIZANDO ALERTAS DESDE UBIDOTS =====");
   
   try {
-    // Primero verificar el estado de conexión
+    // Primero verificar el estado de conexión y valor de 'connected'
     const isConnected = await checkConnectionFromUbidots();
     
     if (!isConnected) {
@@ -651,7 +713,7 @@ async function updateAlertsFromUbidots() {
       
       if (!reconnected) {
         console.log("❌ No se pudo restablecer la conexión");
-        updateLastSync(); // Actualizar sync aunque esté desconectado
+        updateLastSync();
         return;
       }
     }
@@ -664,6 +726,8 @@ async function updateAlertsFromUbidots() {
     
     console.log(`✅ Datos obtenidos:`, {
       conectado: isConnected,
+      valorConnected: alertsState.connectionValue,
+      errorSistema: alertsState.hasSystemError,
       registro46038: data46038,
       registro46039: data46039
     });
@@ -705,7 +769,7 @@ function hideLoadingAndShow() {
 
 // Función de inicialización
 async function initializeAlertsWidget() {
-  console.log("🎯 Inicializando widget de alertas (26 alertas Vibe IQ con conexión por variable)");
+  console.log("🎯 Inicializando widget de alertas con funcionalidad de icono de error");
   
   try {
     // Renderizar estado inicial
@@ -727,306 +791,113 @@ async function initializeAlertsWidget() {
   }
 }
 
-// FUNCIÓN: Simular valores de registros para testing (ahora simula timestamp realista)
-function simulateRegisters(reg46038Value, reg46039Value, simulateConnected = true, timestampOffset = 0) {
-  console.log(`🧪 Simulando registros: 46038=${reg46038Value} (${reg46038Value.toString(2).padStart(16, '0')}), 46039=${reg46039Value} (${reg46039Value.toString(2).padStart(16, '0')})`);
+// FUNCIÓN: Simular valores para testing (incluyendo variable connected)
+function simulateRegisters(reg46038Value, reg46039Value, simulateConnected = true, connectedValue = 1, timestampOffset = 0) {
+  console.log(`🧪 Simulando: 46038=${reg46038Value}, 46039=${reg46039Value}, connected=${connectedValue}, conectado=${simulateConnected}`);
   
-  const timestamp = Date.now() + (timestampOffset * 1000); // timestampOffset en segundos
+  const timestamp = Date.now() + (timestampOffset * 1000);
   const data46038 = { value: reg46038Value, timestamp };
   const data46039 = { value: reg46039Value, timestamp };
   
-  // Simular estado de conexión basado en timestamp
-  if (simulateConnected) {
-    console.log(`🔌 Simulando conexión activa (timestamp: ${formatDateTime(timestamp)})`);
-    updateConnectionStatus(true, timestamp);
-    processUbidotsRegisters(data46038, data46039);
-  } else {
-    // Simular timestamp viejo (más de 10 segundos)
-    const oldTimestamp = timestamp - (15 * 1000); // 15 segundos atrás
-    console.log(`❌ Simulando desconexión (timestamp viejo: ${formatDateTime(oldTimestamp)})`);
-    updateConnectionStatus(false, oldTimestamp);
-  }
+  // Actualizar estado de conexión con valor de variable connected
+  updateConnectionStatus(simulateConnected, timestamp, connectedValue);
+  processUbidotsRegisters(data46038, data46039);
   
   updateTotalAlerts();
   updateRegistersDisplay();
   updateLastSync();
 }
 
-// FUNCIÓN: Simular desconexión por timestamp viejo
-function simulateConnectionByTimestamp() {
-  console.log("🧪 Simulando estados de conexión por timestamp...");
+// FUNCIÓN: Test de funcionalidad de icono de error
+function testSystemErrorIcon() {
+  console.log("🧪 Iniciando test de icono de error del sistema...");
   
-  // Conexión activa (timestamp actual)
+  // Estado normal (connected = 1)
   setTimeout(() => {
-    console.log("✅ Simulando conexión activa");
-    simulateRegisters(0, 0, true, 0); // timestamp actual
+    console.log("📊 Estado 1: Sistema normal (connected = 1)");
+    simulateRegisters(0, 0, true, 1);
   }, 1000);
   
-  // Datos con timestamp de hace 3 segundos (aún conectado)
+  // Error del sistema (connected = 0) pero conectado por timestamp
   setTimeout(() => {
-    console.log("🟡 Simulando datos de hace 3 segundos (conectado)");
-    simulateRegisters(5, 0, true, -3); // 3 segundos atrás
+    console.log("📊 Estado 2: Error del sistema (connected = 0)");
+    simulateRegisters(255, 255, true, 0); // Conectado pero con error del sistema
   }, 3000);
   
-  // Datos con timestamp de hace 12 segundos (desconectado)
+  // Desconectado por timeout (connected = 1 pero timestamp viejo)
   setTimeout(() => {
-    console.log("🔴 Simulando datos de hace 12 segundos (desconectado)");
-    simulateRegisters(0, 0, false, -12); // 12 segundos atrás
+    console.log("📊 Estado 3: Desconectado por timeout");
+    simulateRegisters(0, 0, false, 1, -15); // Timestamp viejo
   }, 5000);
   
-  // Reconexión con timestamp actual
+  // Error del sistema Y desconectado
   setTimeout(() => {
-    console.log("🔄 Simulando reconexión con timestamp actual");
-    simulateRegisters(255, 255, true, 0); // timestamp actual con alertas
-  }, 8000);
+    console.log("📊 Estado 4: Error del sistema Y desconectado");
+    simulateRegisters(0, 0, false, 0, -20); // Timestamp viejo + connected = 0
+  }, 7000);
   
-  // Vuelta a normal
+  // Recuperación gradual
   setTimeout(() => {
-    console.log("✅ Simulando estado normal final");
-    simulateRegisters(0, 0, true, 0);
-  }, 10000);
+    console.log("📊 Estado 5: Recuperación - conectado pero aún con error");
+    simulateRegisters(0, 0, true, 0); // Timestamp actual pero connected = 0
+  }, 9000);
   
-  console.log("🧪 Test de conexión por timestamp programado");
+  // Estado final normal
+  setTimeout(() => {
+    console.log("📊 Estado 6: Recuperación completa");
+    simulateRegisters(0, 0, true, 1); // Todo normal
+  }, 11000);
+  
+  console.log("🧪 Test de icono de error programado");
 }
 
-// FUNCIÓN: Simular desconexión y reconexión
-function simulateConnectionLoss() {
-  console.log("🧪 Simulando pérdida de conexión...");
-  
-  // Desconectar
-  setTimeout(() => {
-    console.log("❌ Simulando desconexión");
-    updateConnectionStatus(false);
-    updateRegistersDisplay();
-  }, 1000);
-  
-  // Intentar reconectar después de 10 segundos
-  setTimeout(() => {
-    console.log("🔄 Simulando reconexión");
-    updateConnectionStatus(true);
-    updateRegistersDisplay();
-  }, 10000);
-}
-
-// FUNCIÓN: Test específico para diferentes combinaciones de alertas con conexión por timestamp
-function testVibeIQAlertsWithConnection() {
-  console.log("🧪 Iniciando test de alertas Vibe IQ con simulación de conexión por timestamp...");
-  
-  // Conectado - Sin alertas (timestamp actual)
-  setTimeout(() => simulateRegisters(0, 0, true, 0), 1000);
-  
-  // Conectado - Solo warnings de velocidad X (timestamp reciente)
-  setTimeout(() => simulateRegisters(5, 0, true, -2), 3000); // 2 segundos atrás
-  
-  // Simular desconexión por timestamp viejo
-  setTimeout(() => {
-    console.log("❌ Simulando desconexión por timestamp viejo");
-    simulateRegisters(0, 0, false, -15); // 15 segundos atrás
-  }, 5000);
-  
-  // Reconexión con timestamp actual y nuevas alertas
-  setTimeout(() => {
-    console.log("✅ Simulando reconexión con timestamp actual y alertas");
-    simulateRegisters(40960, 0, true, 0); // timestamp actual, alarmas de aceleración Y
-  }, 8000);
-  
-  // Alertas de temperatura con timestamp reciente
-  setTimeout(() => simulateRegisters(0, 768, true, -1), 10000); // 1 segundo atrás
-  
-  // Combinación compleja con timestamp actual
-  setTimeout(() => simulateRegisters(2, 530, true, 0), 12000);
-  
-  // Desconexión prolongada (timestamp muy viejo)
-  setTimeout(() => {
-    console.log("❌ Simulando desconexión prolongada");
-    simulateRegisters(0, 0, false, -25); // 25 segundos atrás
-  }, 14000);
-  
-  // Reconexión final con timestamp actual
-  setTimeout(() => {
-    console.log("✅ Simulando reconexión final");
-    simulateRegisters(0, 0, true, 0); // timestamp actual, vuelta a normal
-  }, 18000);
-  
-  console.log("🧪 Test completo de alertas con conexión por timestamp programado");
-}
-
-// FUNCIÓN: Mostrar estado actual de todas las alertas (incluyendo conexión)
+// FUNCIÓN: Mostrar estado actual (versión extendida)
 function showAlertsStatus() {
   console.log("\n📋 ===== ESTADO ACTUAL DE ALERTAS VIBE IQ =====");
   console.log(`Estado de conexión: ${alertsState.isConnected ? '🟢 CONECTADO' : '🔴 DESCONECTADO'}`);
+  console.log(`Variable 'connected': ${alertsState.connectionValue} ${alertsState.hasSystemError ? '(ERROR SISTEMA)' : '(OK)'}`);
+  console.log(`Icono de error visible: ${errorIcon.style.display !== 'none' ? 'SÍ' : 'NO'}`);
   console.log(`Último check de conexión: ${formatDateTime(alertsState.lastConnectionCheck)}`);
   console.log(`Reintentos de conexión: ${alertsState.connectionRetryCount}/${alertsState.maxRetryAttempts}`);
   console.log(`Registro 46038: ${alertsState.lastRegister46038} (${alertsState.lastRegister46038.toString(2).padStart(16, '0')})`);
   console.log(`Registro 46039: ${alertsState.lastRegister46039} (${alertsState.lastRegister46039.toString(2).padStart(16, '0')})`);
   console.log(`Total alertas activas: ${alertsState.totalAlerts}`);
-  
-  // Agrupar por registro para mejor visualización
-  const reg46038Alerts = Object.entries(alertsState.alerts).filter(([_, data]) => data.modbusAddress === 46038);
-  const reg46039Alerts = Object.entries(alertsState.alerts).filter(([_, data]) => data.modbusAddress === 46039);
-  
-  console.log("\n--- REGISTRO 46038 ---");
-  reg46038Alerts.forEach(([type, data]) => {
-    console.log(`${type} (bit ${data.bitPosition}): ${data.isAlert ? data.type.toUpperCase() : 'Normal'} - ${formatDateTime(data.lastUpdate)}`);
-  });
-  
-  console.log("\n--- REGISTRO 46039 ---");
-  reg46039Alerts.forEach(([type, data]) => {
-    console.log(`${type} (bit ${data.bitPosition}): ${data.isAlert ? data.type.toUpperCase() : 'Normal'} - ${formatDateTime(data.lastUpdate)}`);
-  });
-  
   console.log("=====================================\n");
 }
 
-// FUNCIÓN: Obtener resumen por tipo de alerta (incluyendo estado de conexión)
-function getAlertsSummary() {
-  const summary = {
-    connection: {
-      isConnected: alertsState.isConnected,
-      lastCheck: alertsState.lastConnectionCheck,
-      retryCount: alertsState.connectionRetryCount
-    },
-    alerts: {
-      alarms: 0,
-      warnings: 0,
-      normal: 0
-    },
-    byAxis: { X: 0, Y: 0, Z: 0, Temperatura: 0 }
-  };
+// FUNCIÓN: Test completo con todas las funcionalidades
+function testCompleteSystem() {
+  console.log("🧪 Iniciando test completo del sistema con icono de error...");
   
-  Object.values(alertsState.alerts).forEach(alert => {
-    if (alert.isAlert) {
-      if (alert.type === 'alarm') summary.alerts.alarms++;
-      else if (alert.type === 'warning') summary.alerts.warnings++;
-      
-      // Contar por eje
-      if (alert.area === 'Eje X') summary.byAxis.X++;
-      else if (alert.area === 'Eje Y') summary.byAxis.Y++;
-      else if (alert.area === 'Eje Z') summary.byAxis.Z++;
-      else if (alert.area === 'Temperatura') summary.byAxis.Temperatura++;
-    } else {
-      summary.alerts.normal++;
-    }
-  });
-  
-  console.log("📊 Resumen completo:", summary);
-  return summary;
-}
-
-// FUNCIÓN: Simulaciones específicas por eje (con conexión por timestamp)
-function simulateAxisAlerts(axis, alertTypes = ['warning', 'alarm'], timestampOffset = 0) {
-  const isConnected = timestampOffset >= -10; // Conectado si timestamp no es más viejo que 10 segundos
-  console.log(`🧪 Simulando alertas para eje ${axis} (timestamp offset: ${timestampOffset}s, conectado: ${isConnected})...`);
-  
-  let reg46038 = 0;
-  let reg46039 = 0;
-  
-  if (axis === 'X') {
-    // Activar alertas de eje X en registro 46038
-    if (alertTypes.includes('warning')) {
-      reg46038 |= (1 << 0) | (1 << 2) | (1 << 4) | (1 << 6); // Velocity y Accel warnings
-    }
-    if (alertTypes.includes('alarm')) {
-      reg46038 |= (1 << 1) | (1 << 3) | (1 << 5) | (1 << 7); // Velocity y Accel alarms
-    }
-  } else if (axis === 'Y') {
-    // Activar alertas de eje Y en registro 46038
-    if (alertTypes.includes('warning')) {
-      reg46038 |= (1 << 8) | (1 << 10) | (1 << 12) | (1 << 14); // Velocity y Accel warnings
-    }
-    if (alertTypes.includes('alarm')) {
-      reg46038 |= (1 << 9) | (1 << 11) | (1 << 13) | (1 << 15); // Velocity y Accel alarms
-    }
-  } else if (axis === 'Z') {
-    // Activar alertas de eje Z en registro 46039
-    if (alertTypes.includes('warning')) {
-      reg46039 |= (1 << 0) | (1 << 2) | (1 << 4) | (1 << 6); // Velocity y Accel warnings
-    }
-    if (alertTypes.includes('alarm')) {
-      reg46039 |= (1 << 1) | (1 << 3) | (1 << 5) | (1 << 7); // Velocity y Accel alarms
-    }
-  } else if (axis === 'Temperature') {
-    // Activar alertas de temperatura en registro 46039
-    if (alertTypes.includes('warning')) {
-      reg46039 |= (1 << 8); // Temperature warning
-    }
-    if (alertTypes.includes('alarm')) {
-      reg46039 |= (1 << 9); // Temperature alarm
-    }
-  }
-  
-  simulateRegisters(reg46038, reg46039, isConnected, timestampOffset);
-}
-
-// FUNCIÓN: Test de escenarios de conexión/desconexión
-function testConnectionScenarios() {
-  console.log("🧪 Iniciando test de escenarios de conexión...");
-  
-  // Escenario 1: Conectado normal
-  setTimeout(() => {
-    console.log("📊 Escenario 1: Dispositivo conectado normal");
-    simulateRegisters(0, 0, true);
-  }, 1000);
-  
-  // Escenario 2: Desconexión súbita
-  setTimeout(() => {
-    console.log("📊 Escenario 2: Desconexión súbita");
-    updateConnectionStatus(false);
-  }, 3000);
-  
-  // Escenario 3: Intentos de reconexión
-  setTimeout(() => {
-    console.log("📊 Escenario 3: Intentos de reconexión");
-    alertsState.connectionRetryCount = 1;
-    updateConnectionStatus(false);
-  }, 5000);
-  
-  setTimeout(() => {
-    alertsState.connectionRetryCount = 2;
-    updateConnectionStatus(false);
-  }, 7000);
-  
-  // Escenario 4: Reconexión exitosa con alertas
-  setTimeout(() => {
-    console.log("📊 Escenario 4: Reconexión exitosa con alertas");
-    simulateRegisters(255, 255, true); // Varias alertas activas
-  }, 9000);
-  
-  // Escenario 5: Conexión estable
-  setTimeout(() => {
-    console.log("📊 Escenario 5: Conexión estable final");
-    simulateRegisters(0, 0, true);
-  }, 11000);
-  
-  console.log("🧪 Test de conexión programado completamente");
+  setTimeout(() => testSystemErrorIcon(), 1000);
+  setTimeout(() => showAlertsStatus(), 15000);
 }
 
 // Exponer funciones para debugging (versión extendida)
 window.alertsDebug = {
-  // Funciones originales
+  // Funciones principales
   simulateRegisters,
-  simulateAxisAlerts,
   updateAlertsFromUbidots,
-  testVibeIQAlerts: testVibeIQAlertsWithConnection,
   showAlertsStatus,
-  getAlertsSummary,
-  reorderTableRows,
-  processModbusRegister,
-  
-  // Nuevas funciones de conexión
-  checkConnectionFromUbidots,
-  handleConnectionRetry,
-  simulateConnectionLoss,
-  simulateConnectionByTimestamp, // Nueva función específica para timestamp
-  testConnectionScenarios,
   updateConnectionStatus,
-  showReconnectionMessage,
+  checkConnectionFromUbidots,
+  
+  // Nuevas funciones para icono de error
+  testSystemErrorIcon,
+  testCompleteSystem,
+  updateSystemErrorIcon,
+  
+  // Funciones de UI
+  updateConnectionStatusUI,
+  updateRegistersDisplay,
+  reorderTableRows,
   
   // Estados y configuración
   state: alertsState,
-  config: UBIDOTS_CONFIG
+  config: UBIDOTS_CONFIG,
+  elements: { errorIcon }
 };
 
 // Inicializar cuando se carga la página
-console.log("🚀 Iniciando sistema de alertas Vibe IQ (26 alertas con detección de conexión por variable)");
+console.log("🚀 Iniciando sistema de alertas Vibe IQ con funcionalidad de icono de error");
 initializeAlertsWidget();
